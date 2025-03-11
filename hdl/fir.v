@@ -377,7 +377,7 @@ always @* begin
     FIR_OUT: begin
       if (last_flg == 1) fir_state_next = FIR_IDLE;
       else if (sm_tready) fir_state_next = FIR_WAIT;
-      else fir_state_next = FIR_IDLE;
+      else fir_state_next = FIR_OUT;
     end
     default: fir_state_next = fir_state;
   endcase
