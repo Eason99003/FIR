@@ -92,7 +92,7 @@ reg signed [(pDATA_WIDTH-1):0] h, h_next, a, a_next;
 reg signed [(pDATA_WIDTH-1):0] y, y_next, m, m_next;
 
 reg [(pADDR_WIDTH-1):0] k, k_next;
-reg cal_count, cal_count_next;
+reg [2:0] cal_count, cal_count_next;
 
 localparam FIR_IDLE = 3'b000,
            DATA_RST = 3'b001,
@@ -296,7 +296,7 @@ always @* begin
 end
 
 always @* begin
-  if (fir_state_next == FIR_RUN) begin
+  if (fir_state == FIR_RUN) begin
     if (k == (tap_number - 1)) k_next = 0;
     else k_next = k + 1;
   end else begin
@@ -350,7 +350,7 @@ end
 
 always @* begin
   if (fir_state == FIR_CAL) begin
-    if (cal_count == 1) cal_count_next = 0;
+    if (cal_count == 2'd2) cal_count_next = 0;
     else cal_count_next = cal_count + 1;
   end else begin
     cal_count_next = 0;
@@ -370,8 +370,8 @@ always @* begin
     FIR_WAIT: fir_state_next = (ss_tvalid == 1) ? FIR_SSIN : FIR_WAIT;
     FIR_SSIN: fir_state_next = (ss_tready == 1) ? FIR_STORE : FIR_SSIN;
     FIR_STORE: fir_state_next = FIR_RUN;
-    FIR_RUN: fir_state_next = (k == 0) ? FIR_CAL : FIR_RUN;
-    FIR_CAL: fir_state_next = (cal_count == 1) ? FIR_OUT : FIR_CAL;
+    FIR_RUN: fir_state_next = (k == (tap_number - 1)) ? FIR_CAL : FIR_RUN;
+    FIR_CAL: fir_state_next = (cal_count == 2'd2) ? FIR_OUT : FIR_CAL;
     FIR_OUT: begin
       if (last_flg == 1) fir_state_next = FIR_IDLE;
       else if (sm_tready) fir_state_next = FIR_WAIT;
