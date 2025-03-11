@@ -223,6 +223,8 @@ always @* begin
     ap_done_next = 1;
   end else if (fir_state == FIR_SSIN) begin
     ap_done_next = 0;
+  end else if (tapReadAddr == 'h00) begin
+    ap_done_next = 0;
   end else begin
     ap_done_next = ap_done;
   end
