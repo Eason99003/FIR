@@ -380,8 +380,10 @@ always @* begin
     FIR_RUN: fir_state_next = (k == tap_number) ? FIR_CAL : FIR_RUN;
     FIR_CAL: fir_state_next = (cal_count == 2'd2) ? FIR_OUT : FIR_CAL;
     FIR_OUT: begin
-      if (last_flg == 1) fir_state_next = FIR_IDLE;
-      else if (sm_tready) fir_state_next = FIR_WAIT;
+      if (sm_tready) begin
+        if (last_flg) fir_state_next = FIR_IDLE;
+        else fir_state_next = FIR_WAIT;
+      end 
       else fir_state_next = FIR_OUT;
     end
     default: fir_state_next = fir_state;
