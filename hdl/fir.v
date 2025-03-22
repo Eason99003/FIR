@@ -130,7 +130,10 @@ always @* begin
       'h00: rdata = {ap_idle, ap_done, ap_start};
       'h10: rdata = data_length;
       'h14: rdata = tap_number;
-      default: rdata = tap_Do;
+      default: begin
+        if (fir_state == FIR_IDLE) rdata = tap_Do;
+        else rdata = 32'hffffffff;
+      end
     endcase
 end 
 
@@ -163,7 +166,7 @@ always @(posedge axis_clk or negedge axis_rst_n) begin
     tapReadAddr <= 0;
   end else begin
     tapWriteAddr <= (awvalid == 1 && awready == 1) ? awaddr : tapWriteAddr;
-    tapReadAddr <= (arvalid == 1 && arready == 1) ? araddr : tapReadAddr;
+    tapReadAddr <= (arvalid == 1) ? araddr : tapReadAddr;
   end
 end
 
@@ -218,10 +221,15 @@ always @* begin
 end
 
 always @* begin
-  if (fir_state == FIR_OUT && last_flg == 1) begin
+  if (fir_state_next == FIR_IDLE && last_flg == 1) begin
     ap_done_next = 1;
-  end else if (fir_state == FIR_SSIN) begin
-    ap_done_next = 0;
+  end else if (fir_state == FIR_IDLE) begin
+    if (tapReadAddr == 'h00 && rvalid == 1 && rready == 1) begin
+      ap_done_next = 0;
+    end else begin
+      ap_done_next = ap_done;
+    end
+  end else if (fir_state == DATA_RST) begin
     ap_done_next = 0;
   end else begin
     ap_done_next = ap_done;
@@ -247,7 +255,9 @@ end
 // tap-Ram
 always @* begin
   if (wready == 1 && wvalid == 1) tap_access_addr = tapWriteAddr;
-  else if (axi_read_state == AXI_READ_WAIT && ap_idle == 1) tap_access_addr = tapReadAddr;
+  else if ((axi_read_state == AXI_READ_WAIT || axi_read_state == AXI_READ_ADDR || 
+    axi_read_state == AXI_READ_DATA) && ap_idle == 1) 
+    tap_access_addr = tapReadAddr;
   else tap_access_addr = 4 * k + 'h80;
   tap_A = (tap_access_addr >= 'h80 && tap_access_addr <= 'hFC) ? tap_access_addr - 'h80 : 0;
 end
@@ -255,13 +265,14 @@ end
 always @* begin
   tap_EN = (
     (wready == 1 && wvalid == 1) ||
-    (axi_read_state == AXI_READ_WAIT || axi_read_state == AXI_READ_DATA) ||
+    ((axi_read_state == AXI_READ_WAIT || axi_read_state == AXI_READ_DATA) && fir_state == FIR_IDLE) ||
     (fir_state == FIR_RUN)
   ) ? 1 : 0;
-end
+end 
 
 always @* begin
-  if (wready == 1 && wvalid == 1 && tapWriteAddr != 'h00 && tapWriteAddr != 'h10) begin
+  if (wready == 1 && wvalid == 1 && tapWriteAddr != 'h00 && tapWriteAddr != 'h10 && 
+    tapWriteAddr != 'h14 && (fir_state == FIR_IDLE || fir_state == DATA_RST)) begin
     tap_WE = 4'b1111;
     tap_Di = wdata;
   end else begin
@@ -312,8 +323,12 @@ always @* begin
 end
 
 always @* begin
-  if (fir_state == DATA_RST) dataRam_rst_cnt_next = dataRam_rst_cnt + 1;
-  else dataRam_rst_cnt_next = 0;
+  if (fir_state == DATA_RST) begin
+    if (dataRam_rst_cnt == tap_number - 1) dataRam_rst_cnt_next = dataRam_rst_cnt;
+    else dataRam_rst_cnt_next = dataRam_rst_cnt + 1;
+  end else begin
+    dataRam_rst_cnt_next = 0;
+  end
 end
 
 always @(posedge axis_clk or negedge axis_rst_n) begin
@@ -372,8 +387,14 @@ end
 // FIR fsm
 always @* begin
   case (fir_state)
-    FIR_IDLE: fir_state_next = (wready == 1 && wvalid == 1 && wdata == 1) ? DATA_RST : FIR_IDLE;
-    DATA_RST: fir_state_next = (dataRam_rst_cnt == (tap_number - 1)) ? FIR_WAIT : DATA_RST;
+    FIR_IDLE: fir_state_next = (ap_start == 1) ? DATA_RST : FIR_IDLE;
+    DATA_RST: begin
+      if (dataRam_rst_cnt == (tap_number - 1)) begin
+        fir_state_next = FIR_WAIT;
+      end else begin
+        fir_state_next = DATA_RST;
+      end
+    end
     FIR_WAIT: fir_state_next = (ss_tvalid == 1) ? FIR_SSIN : FIR_WAIT;
     FIR_SSIN: fir_state_next = (ss_tready == 1) ? FIR_STORE : FIR_SSIN;
     FIR_STORE: fir_state_next = FIR_RUN;
